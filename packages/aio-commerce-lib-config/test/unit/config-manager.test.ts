@@ -258,6 +258,28 @@ describe("ConfigManager functions", () => {
     ).toBe("JPY");
   });
 
+  it("sets configuration by scope id and code-level consistently", async () => {
+    await setConfiguration(
+      { config: [{ name: "currency", value: "USD" }] },
+      byCodeAndLevel("base", "website"),
+    );
+
+    const byScopeIdResponse = await setConfiguration(
+      { config: [{ name: "currency", value: "EUR" }] },
+      byScopeId("idw"),
+    );
+    const byCodeLevelResult = await getConfiguration(
+      byCodeAndLevel("base", "website"),
+    );
+
+    expect(byScopeIdResponse.scope.id).toBe("idw");
+    expect(byScopeIdResponse.scope.code).toBe("base");
+    expect(
+      byCodeLevelResult.config.find((e: ConfigValue) => e.name === "currency")
+        ?.value,
+    ).toBe("EUR");
+  });
+
   it("merges existing and newly set entries without losing prior values", async () => {
     // Set initial config
     await configRepository.saveConfig(

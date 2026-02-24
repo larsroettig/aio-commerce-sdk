@@ -15,8 +15,10 @@ import {
   mergeScopes,
   sanitizeRequestEntries,
 } from "#config-utils";
+import { logChange } from "#modules/audit/audit-logger";
 import { getPasswordFields } from "#modules/schema/utils";
 import * as scopeTreeRepository from "#modules/scope-tree/scope-tree-repository";
+import { createVersion } from "#modules/versioning/version-manager";
 import { encrypt } from "#utils/encryption";
 
 import * as configRepository from "./configuration-repository";
@@ -26,7 +28,24 @@ import type {
   SetConfigurationResponse,
 } from "#types/index";
 import type { ConfigContext, ConfigValueWithOptionalOrigin } from "./types";
+
 // loadScopeConfig and persistConfiguration are now repository methods
+
+import {
+  MAX_VERSIONS_ENV_VAR,
+  resolveMaxVersions,
+} from "#utils/versioning-constants";
+
+/**
+ * Retrieves the maximum number of versions to retain from environment configuration.
+ *
+ * @returns Configured maximum versions or default if not set/invalid.
+ */
+function getMaxVersions(): number {
+  return resolveMaxVersions(process.env[MAX_VERSIONS_ENV_VAR]);
+}
+
+type ScopeArgs = [scopeId: string] | [scopeCode: string, scopeLevel: string];
 
 /**
  * Sets configuration values for a scope identified by code and level or id.
@@ -46,8 +65,9 @@ import type { ConfigContext, ConfigValueWithOptionalOrigin } from "./types";
 export async function setConfiguration(
   context: ConfigContext,
   request: SetConfigurationRequest,
-  ...args: unknown[]
+  ...args: ScopeArgs
 ): Promise<SetConfigurationResponse> {
+  // 1. Load current configuration
   const scopeTree = await scopeTreeRepository.getPersistedScopeTree(
     context.namespace,
   );
@@ -77,22 +97,62 @@ export async function setConfiguration(
     scopeLevel,
   );
 
+  const scope = { id: String(scopeId), code: scopeCode, level: scopeLevel };
+
+  // 2. Create version with diff calculation
+  const versionContext = {
+    namespace: context.namespace,
+    maxVersions: getMaxVersions(),
+  };
+
+  const { version } = await createVersion(versionContext, {
+    scope,
+    newConfig: mergedScopeConfig,
+    oldConfig: existingEntries,
+    actor: request.metadata?.actor,
+  });
+
+  // 3. Log change to audit log
+  const auditContext = {
+    namespace: context.namespace,
+  };
+
+  // Determine action type (default to create/update based on existing entries)
+  const action =
+    request.metadata?.action ??
+    (existingEntries.length === 0 ? "create" : "update");
+
+  await logChange(auditContext, {
+    scope,
+    versionId: version.id,
+    actor: request.metadata?.actor ?? {},
+    changes: version.diff,
+    action,
+  });
+
+  // 4. Update current configuration
   const payload = {
-    scope: { id: scopeId, code: scopeCode, level: scopeLevel },
+    scope,
     config: mergedScopeConfig,
   };
 
   await configRepository.persistConfig(scopeCode, payload);
+
   const responseConfig = sanitizedEntries.map((entry) => ({
     name: entry.name,
     value: entry.value,
   }));
 
+  // 5. Return success with version info
   return {
     message: "Configuration values updated successfully",
     timestamp: new Date().toISOString(),
-    scope: { id: String(scopeId), code: scopeCode, level: scopeLevel },
+    scope,
     config: responseConfig,
+    versionInfo: {
+      versionId: version.id,
+      versionNumber: version.versionNumber,
+    },
   };
 }
 

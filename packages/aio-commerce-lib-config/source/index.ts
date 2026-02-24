@@ -27,8 +27,28 @@ export {
 } from "./config-utils";
 export { SchemaBusinessConfig } from "./modules/schema";
 export * from "./types";
+// Archive management (for large/old versions)
+export {
+  type ArchiveReference,
+  archiveOldVersions,
+  archiveVersion,
+  getStorageStats,
+  restoreFromArchive,
+  shouldArchive,
+} from "./utils/archive";
 export { generateEncryptionKey } from "./utils/encryption";
+// Storage utilities (for advanced use cases)
+export {
+  getValueSize,
+  isWithinStateSizeLimit,
+  StorageLimitExceededError,
+} from "./utils/storage-limits";
 
+export type {
+  AuditActor,
+  AuditEntry,
+  GetAuditLogResponse,
+} from "./modules/audit";
 export type { ConfigOrigin, ConfigValue } from "./modules/configuration";
 export type {
   BusinessConfig,
@@ -38,3 +58,10 @@ export type {
   BusinessConfigSchemaValue,
 } from "./modules/schema";
 export type { ScopeNode, ScopeTree } from "./modules/scope-tree";
+export type {
+  ConfigDiff,
+  ConfigVersion,
+  GetVersionHistoryResponse,
+  TwoVersionComparison,
+  VersionComparison,
+} from "./modules/versioning";
