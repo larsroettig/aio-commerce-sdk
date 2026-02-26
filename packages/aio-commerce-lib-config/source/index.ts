@@ -27,22 +27,7 @@ export {
 } from "./config-utils";
 export { SchemaBusinessConfig } from "./modules/schema";
 export * from "./types";
-// Archive management (for large/old versions)
-export {
-  type ArchiveReference,
-  archiveOldVersions,
-  archiveVersion,
-  getStorageStats,
-  restoreFromArchive,
-  shouldArchive,
-} from "./utils/archive";
 export { generateEncryptionKey } from "./utils/encryption";
-// Storage utilities (for advanced use cases)
-export {
-  getValueSize,
-  isWithinStateSizeLimit,
-  StorageLimitExceededError,
-} from "./utils/storage-limits";
 
 export type {
   AuditActor,

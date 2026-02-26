@@ -10,9 +10,7 @@
  * governing permissions and limitations under the License.
  */
 
-import { restoreFromArchive, saveVersionWithAutoArchive } from "#utils/archive";
 import { getSharedFiles } from "#utils/repository";
-import { getValueSize, StorageLimitExceededError } from "#utils/storage-limits";
 
 import type { ConfigVersion, VersionMetadata } from "./types";
 
@@ -20,11 +18,29 @@ const VERSION_ROOT = "versions";
 const META_FILENAME = "meta.json";
 const INDEX_FILENAME = "index.json";
 
+class StorageLimitExceededError extends Error {
+  public constructor(valueSize: number, limit: number) {
+    super(
+      `Storage limit exceeded: value size ${valueSize} bytes exceeds limit of ${limit} bytes`,
+    );
+    this.name = "StorageLimitExceededError";
+  }
+}
+
+function getValueSize(value: unknown): number {
+  try {
+    const serialized = JSON.stringify(value);
+    return Buffer.byteLength(serialized, "utf8");
+  } catch {
+    return -1;
+  }
+}
+
 /**
- * Saves a version to storage with automatic archiving for large versions.
+ * Saves a version to file storage.
  */
 export async function saveVersion(
-  namespace: string,
+  _namespace: string,
   version: ConfigVersion,
 ): Promise<{ archived: boolean }> {
   const sizeInBytes = getValueSize(version);
@@ -34,23 +50,29 @@ export async function saveVersion(
     throw new StorageLimitExceededError(sizeInBytes, MAX_PRACTICAL_SIZE_BYTES);
   }
 
-  const result = await saveVersionWithAutoArchive(
-    namespace,
-    version.scope.code,
-    version,
+  const files = await getSharedFiles();
+  await files.write(
+    livePath(version.scope.code, version.id),
+    JSON.stringify(version),
   );
-  return { archived: result.archived };
+  return { archived: false };
 }
 
 /**
- * Gets a version by ID, checking live and archive storage.
+ * Gets a version by ID from live storage.
  */
-export function getVersion(
-  namespace: string,
+export async function getVersion(
+  _namespace: string,
   scopeCode: string,
   versionId: string,
 ): Promise<ConfigVersion | null> {
-  return restoreFromArchive(namespace, scopeCode, versionId);
+  const files = await getSharedFiles();
+  try {
+    const live = await files.read(livePath(scopeCode, versionId));
+    return live ? (JSON.parse(live.toString()) as ConfigVersion) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -113,7 +135,7 @@ export function getVersionList(
 }
 
 /**
- * Deletes a version (both live and archive copies).
+ * Deletes a version from live storage.
  */
 export async function deleteVersion(
   _namespace: string,
@@ -121,10 +143,7 @@ export async function deleteVersion(
   versionId: string,
 ): Promise<void> {
   const files = await getSharedFiles();
-  await Promise.allSettled([
-    files.delete?.(livePath(scopeCode, versionId)),
-    files.delete?.(archivePath(scopeCode, versionId)),
-  ]);
+  await files.delete?.(livePath(scopeCode, versionId));
 }
 
 /**
@@ -152,10 +171,6 @@ function indexPath(scopeCode: string) {
 
 function livePath(scopeCode: string, versionId: string) {
   return `${VERSION_ROOT}/${scopeCode}/${versionId}.json`;
-}
-
-function archivePath(scopeCode: string, versionId: string) {
-  return `archives/versions/${scopeCode}/${versionId}.json`;
 }
 
 async function readIndex(scopeCode: string): Promise<string[]> {
