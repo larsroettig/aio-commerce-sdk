@@ -136,3 +136,7 @@ out
 
 .cursor/*
 !.cursor/rules
+
+# pnpm store
+.pnpm-store/
+node_modules
